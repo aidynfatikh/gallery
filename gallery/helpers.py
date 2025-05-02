@@ -22,12 +22,24 @@ transform = transforms.Compose([
     )
 ])
 
-def generate_embedding(image_path):
-    image = PILImage.open(image_path).convert('RGB')
-    input_tensor = transform(image).unsqueeze(0).to(device)
+from PIL import Image as PILImage
+import io
+
+def generate_embedding_from_pil(img: PILImage.Image) -> list:
+    input_tensor = transform(img).unsqueeze(0).to(device)
     with torch.no_grad():
         features = model(input_tensor).cpu().numpy()[0]
     return features.tolist()
+
+
+def generate_embedding_from_bytes(bts: bytes) -> list:
+    img = PILImage.open(io.BytesIO(bts)).convert('RGB')
+    return generate_embedding_from_pil(img)
+
+
+def generate_embedding(image_path: str) -> list:
+    img = PILImage.open(image_path).convert('RGB')
+    return generate_embedding_from_pil(img)
 
 def cosine_similarity(a, b):
     a = np.array(a)

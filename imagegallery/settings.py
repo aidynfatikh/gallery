@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-1q72=plkex44tx#$z-br^v*6zbg6li#7ax6w6orv0(*_eoo_68'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = []
 
@@ -126,25 +126,34 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 import os
 
-# Allow all hosts (or use Render’s domain when deployed)
+# Allow all hosts (or lock down to your Render domain in production)
 ALLOWED_HOSTS = ['*']
 
-# Static & media settings
+# Static files (CSS, JS, etc.)
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# Media (user‑uploaded and AI images)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# For production secret key
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'unsafe-secret-key')
+# Toggle between local media and Cloudinary
+USE_CLOUDINARY = os.getenv("USE_CLOUDINARY", "False") == "True"
 
-DEBUG = os.environ.get('RENDER', '') != 'true'
+if USE_CLOUDINARY:
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+else:
+    # default storage will be the filesystem (MEDIA_ROOT)
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
 
+# Cloudinary credentials
 CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
-    'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
-    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET')
+    'CLOUD_NAME':    os.getenv('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY':       os.getenv('CLOUDINARY_API_KEY'),
+    'API_SECRET':    os.getenv('CLOUDINARY_API_SECRET'),
 }
 
-DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+# Secret key & debug
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-secret-key')
+DEBUG      = os.getenv('RENDER', '') != 'true'
+

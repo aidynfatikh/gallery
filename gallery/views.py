@@ -1,110 +1,116 @@
-from django.shortcuts import render, redirect
-from .models import Image
-from .helpers import generate_embedding, cosine_similarity, generate_image_from
+from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import get_object_or_404
 from django.core.files.storage import default_storage
 from django.conf import settings
-import numpy as np
-import json
-import os
+import os, json
+from .models import Image
+from .helpers import generate_embedding_from_bytes, generate_embedding, cosine_similarity, generate_image_from
 
+@csrf_exempt
 def image_list(request):
+    if request.method != 'GET':
+        return HttpResponseNotAllowed(['GET'])
     images = Image.objects.all().order_by('-uploaded_at')
     data = [
         {
-            'id': image.id,
-            'image_url': image.image.url,
-            'uploaded_at': image.uploaded_at,
-            'is_generated': image.is_generated,
-        } for image in images
+            'id': img.id,
+            'image_url': img.image.url,
+            'uploaded_at': img.uploaded_at,
+            'is_generated': img.is_generated,
+        }
+        for img in images
     ]
     return JsonResponse(data, safe=False)
 
 @csrf_exempt
 def upload_image(request):
-    if request.method == "POST":
-        uploaded_file = request.FILES.get("image")
-        if uploaded_file:
-            new_image = Image(image=uploaded_file, is_generated=False)
-            new_image.save()
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    uploaded_file = request.FILES.get('image')
+    if not uploaded_file:
+        return JsonResponse({'error': 'No image uploaded'}, status=400)
 
-            new_image.embedding = generate_embedding(new_image.image.path)
-            new_image.save()
+    # Save to Cloudinary or default storage
+    new_image = Image.objects.create(image=uploaded_file, is_generated=False)
 
-            return JsonResponse({'status': 'uploaded'})
-    return JsonResponse({'error': 'No image uploaded'}, status=400)
+    # Read file bytes from storage
+    with new_image.image.open('rb') as f:
+        file_bytes = f.read()
 
+    # Generate and save embedding
+    embedding = generate_embedding_from_bytes(file_bytes)
+    new_image.embedding = embedding
+    new_image.save()
+
+    return JsonResponse({'status': 'uploaded'})
 
 @csrf_exempt
 def delete_image(request, image_id):
-    if request.method == "DELETE":
-        try:
-            image = Image.objects.get(id=image_id)
-            image.image.delete()  # delete the file
-            image.delete()        # delete the DB entry
-            return JsonResponse({'status': 'deleted'})
-        except Image.DoesNotExist:
-            return JsonResponse({'error': 'Image not found'}, status=404)
-    return HttpResponseNotAllowed(['DELETE'])
+    if request.method != 'DELETE':
+        return HttpResponseNotAllowed(['DELETE'])
+    img = get_object_or_404(Image, id=image_id)
+    # Remove file from storage
+    img.image.delete()
+    img.delete()
+    return JsonResponse({'status': 'deleted'})
 
 @csrf_exempt
 def search_by_image(request):
-    if request.method == 'POST' and 'image' in request.FILES:
-        temp_file = request.FILES['image']
-        temp_path = default_storage.save('temp/query.jpg', temp_file)
-        full_path = os.path.join(settings.MEDIA_ROOT, temp_path)
+    if request.method != 'POST' or 'image' not in request.FILES:
+        return JsonResponse({'error': 'No image uploaded'}, status=400)
+    # temporarily save query image
+    temp_file = request.FILES['image']
+    temp_path = default_storage.save('temp_query', temp_file)
+    with default_storage.open(temp_path, 'rb') as f:
+        query_bytes = f.read()
+    default_storage.delete(temp_path)
 
-        query_vec = generate_embedding(full_path)
-        default_storage.delete(temp_path)
+    query_vec = generate_embedding_from_bytes(query_bytes)
+    imgs = Image.objects.exclude(embedding=None)
+    sims = [(img, cosine_similarity(query_vec, img.embedding)) for img in imgs]
+    sims.sort(key=lambda x: x[1], reverse=True)
 
-        images = Image.objects.exclude(embedding=None)
-        if not images.exists():
-            print("doesnt exist")
-            return JsonResponse([], safe=False)
-
-        similarities = [
-            cosine_similarity(query_vec, img.embedding) for img in images
-        ]
-
-        top_indices = np.argsort(similarities)[::-1]
-        image_list = list(images)
-        top_images = [image_list[int(i)] for i in top_indices]
-
-        data = [{
+    data = [
+        {
             'id': img.id,
             'image_url': request.build_absolute_uri(img.image.url),
             'uploaded_at': img.uploaded_at,
             'is_generated': img.is_generated,
-        } for img in top_images]
-
-        return JsonResponse(data, safe=False)
-    return JsonResponse({'error': 'No image uploaded'}, status=400)
+        }
+        for img, _ in sims
+    ]
+    return JsonResponse(data, safe=False)
 
 @csrf_exempt
 def generate_image(request):
-    if request.method == 'POST':
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    try:
         data = json.loads(request.body)
         prompt = data.get('prompt')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if not prompt:
+        return JsonResponse({'error': 'Prompt required'}, status=400)
 
-        if not prompt:
-            return JsonResponse({'error': 'Prompt required'}, status=400)
+    # Create placeholder record to get ID
+    temp = Image.objects.create(image='temp', is_generated=True)
+    # Generate and save image to MEDIA_ROOT/images/generated_<id>.png
+    relative_path = generate_image_from(prompt, temp.id)
+    # Delete placeholder and create real record
+    temp.delete()
+    new_img = Image.objects.create(image=relative_path, is_generated=True)
 
-        temp = Image.objects.create(image='temp.jpg', is_generated=True)
-        image_path = generate_image_from(prompt, temp.id)  # returns local file path
-        temp.delete()
+    # Compute embedding from saved file
+    full_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+    emb = generate_embedding(full_path)
+    new_img.embedding = emb
+    new_img.save()
 
-        new_image = Image.objects.create(image=image_path,is_generated=True)
-        new_image.embedding = generate_embedding(new_image.image.path)
-        new_image.save()
-
-        return JsonResponse({
-            'id': new_image.id,
-            'image_url': request.build_absolute_uri(new_image.image.url),
-            'uploaded_at': new_image.uploaded_at,
-            'is_generated': new_image.is_generated,
-        })
-
-
-
+    return JsonResponse({
+        'id': new_img.id,
+        'image_url': request.build_absolute_uri(new_img.image.url),
+        'uploaded_at': new_img.uploaded_at,
+        'is_generated': new_img.is_generated,
+    })
