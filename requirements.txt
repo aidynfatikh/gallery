@@ -2,9 +2,10 @@ accelerate==1.6.0
 asgiref==3.8.1
 certifi==2025.4.26
 charset-normalizer==3.4.2
-clip==0.2.0
+cloudinary==1.44.0
 diffusers==0.33.1
 Django==5.2
+django-cloudinary-storage==0.3.0
 filelock==3.18.0
 fsspec==2025.3.2
 gunicorn==23.0.0
@@ -39,6 +40,7 @@ regex==2024.11.6
 requests==2.32.3
 safetensors==0.5.3
 setuptools==80.1.0
+six==1.17.0
 sqlparse==0.5.3
 sympy==1.14.0
 tokenizers==0.21.1
