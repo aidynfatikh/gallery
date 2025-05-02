@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: django-gallery
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn yourprojectname.wsgi:application
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        value: your-secret-key-here
+    staticPublishPath: staticfiles
