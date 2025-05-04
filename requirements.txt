@@ -2,10 +2,9 @@ accelerate==1.6.0
 asgiref==3.8.1
 certifi==2025.4.26
 charset-normalizer==3.4.2
-cloudinary==1.44.0
 diffusers==0.33.1
+dj-database-url==2.3.0
 Django==5.2
-django-cloudinary-storage==0.3.0
 filelock==3.18.0
 fsspec==2025.3.2
 gunicorn==23.0.0
