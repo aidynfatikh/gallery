@@ -6,7 +6,6 @@ from django.conf import settings
 import os, json
 import uuid
 
-
 from .models import Image
 from .helpers import generate_embedding, cosine_similarity, generate_from_prompt
 
