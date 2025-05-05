@@ -25,8 +25,7 @@ transform = transforms.Compose([
 
 pipeline = DiffusionPipeline.from_pretrained(
     "segmind/tiny-sd",
-    torch_dtype=torch.float16,
-    local_files_only=True  
+    torch_dtype=torch.float16 if device=="cuda" else torch.float32,
 )
 pipeline.to(device)
 pipeline.enable_attention_slicing()
