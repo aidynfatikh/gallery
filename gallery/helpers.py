@@ -8,6 +8,7 @@ import os
 
 from diffusers import DiffusionPipeline
 from django.conf import settings
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Currently used device: {device.upper()}")
@@ -22,13 +23,19 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-pipeline = DiffusionPipeline.from_pretrained("segmind/tiny-sd", torch_dtype=torch.float16 if device == "cuda" else torch.float32)
+pipeline = DiffusionPipeline.from_pretrained(
+    "segmind/tiny-sd",
+    torch_dtype=torch.float16,
+    local_files_only=True  
+)
 pipeline.to(device)
+pipeline.enable_attention_slicing()
+print("Pipeline loaded on", device)
 
 def generate_embedding(image_path: str):
     img = PILImage.open(image_path).convert('RGB')
     input_tensor = transform(img).unsqueeze(0).to(device)
-    with torch.no_grad():
+    with torch.inference_mode():
         features = model(input_tensor).cpu().numpy()[0]
     return features.tolist()
 
@@ -41,7 +48,9 @@ def cosine_similarity(a, b):
     return dot / (norm_a * norm_b + 1e-10)
 
 def generate_from_prompt(prompt, name):
-    image = pipeline(prompt).images[0]
+    with torch.inference_mode():
+        image = pipeline(prompt, num_inference_steps=25).images[0]
+
     filename = f"{name}.png"
     relative_path = os.path.join('images', filename)
     media_path = os.path.join(settings.MEDIA_ROOT, relative_path)
@@ -50,4 +59,5 @@ def generate_from_prompt(prompt, name):
     image.save(media_path)
 
     return relative_path
+
 

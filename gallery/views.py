@@ -1,28 +1,32 @@
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.utils.crypto import get_random_string
 from django.conf import settings
 import os, json
 import uuid
 
-from .models import Image
+from .models import Image, Comment
 from .helpers import generate_embedding, cosine_similarity, generate_from_prompt
 
 @csrf_exempt
 def list_images(request):
     if request.method != 'GET':
         return HttpResponseNotAllowed(['GET'])
+
+    liked = request.session.get('liked_images', [])
     images = Image.objects.all().order_by('-uploaded_at')
-    data = [
-        {
+    data = []
+    for img in images:
+        data.append({
             'id': img.id,
             'image_url': img.image.url,
             'uploaded_at': img.uploaded_at,
             'is_generated': img.is_generated,
-        }
-        for img in images
-    ]
+            'likes': img.likes,
+            'already_liked': img.id in liked,
+        })
     return JsonResponse(data, safe=False)
 
 @csrf_exempt
@@ -78,16 +82,22 @@ def search_by_image(request):
     sims = [(img, cosine_similarity(query_vec, img.embedding)) for img in imgs]
     sims.sort(key=lambda x: x[1], reverse=True)
 
+    liked_ids = request.session.get('liked_images', [])
+
     data = [
         {
             'id': img.id,
             'image_url': request.build_absolute_uri(img.image.url),
-            'uploaded_at': img.uploaded_at,
+            'uploaded_at': img.uploaded_at.isoformat(),
             'is_generated': img.is_generated,
+            'likes': img.likes,
+            'already_liked': img.id in liked_ids,
         }
         for img, _ in sims
     ]
+
     return JsonResponse(data, safe=False)
+
 
 @csrf_exempt
 def generate_image(request):
@@ -114,4 +124,75 @@ def generate_image(request):
         'image_url': request.build_absolute_uri(new_img.image.url),
         'uploaded_at': new_img.uploaded_at,
         'is_generated': new_img.is_generated,
+    })
+
+@csrf_exempt
+def like_image(request, image_id):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    liked = request.session.get('liked_images', [])
+    img = get_object_or_404(Image, id=image_id)
+
+    if image_id not in liked:
+        img.likes += 1
+        img.save()
+        liked.append(image_id)
+        request.session['liked_images'] = liked
+        request.session.modified = True
+        action = 'liked'
+    else:
+        action = 'none' 
+
+    return JsonResponse({'likes': img.likes, 'action': action})
+
+
+@csrf_exempt
+def unlike_image(request, image_id):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    liked = request.session.get('liked_images', [])
+    img = get_object_or_404(Image, id=image_id)
+
+    if image_id in liked and img.likes > 0:
+        img.likes -= 1
+        img.save()
+        liked.remove(image_id)
+        request.session['liked_images'] = liked
+        request.session.modified = True
+        action = 'unliked'
+    else:
+        action = 'none'
+
+    return JsonResponse({'likes': img.likes, 'action': action})
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def get_post_data(request, image_id):
+    img = get_object_or_404(Image, id=image_id)
+    comments = [
+        {'id': c.id, 'text': c.text, 'created_at': c.created_at}
+        for c in img.comments.order_by('created_at')
+    ]
+    return JsonResponse({
+        'id': img.id,
+        'image_url': request.build_absolute_uri(img.image.url),
+        'likes': img.likes,
+        'already_liked': image_id in request.session.get('liked_images', []),
+        'comments': comments,
+    })
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def post_comment(request, image_id):
+    img = get_object_or_404(Image, id=image_id)
+    body = json.loads(request.body.decode('utf-8'))
+    text = body.get('text', '').strip()
+    if not text:
+        return JsonResponse({'error': 'Empty comment'}, status=400)
+
+    comment = Comment.objects.create(image=img, text=text)
+    return JsonResponse({
+        'id': comment.id,
+        'text': comment.text,
+        'created_at': comment.created_at,
     })

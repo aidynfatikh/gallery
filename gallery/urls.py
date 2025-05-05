@@ -13,4 +13,8 @@ urlpatterns = [
     path('delete/<int:image_id>/', views.delete_image, name='delete-image'),
     path('search-image/', views.search_by_image, name='search-image'),
     path('generate-image/', views.generate_image, name='generate-image'),
+    path('like/<int:image_id>/', views.like_image, name='like_image'),
+    path('unlike/<int:image_id>/', views.unlike_image, name='unlike_image'),
+    path('post-data/<int:image_id>/', views.get_post_data, name='get_post_data'),
+    path('post-comment/<int:image_id>/', views.post_comment, name='post_comment'),
 ]
