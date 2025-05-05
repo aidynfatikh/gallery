@@ -13,7 +13,8 @@ cd gallery
 2. Создайте виртуальное окружение:
 ```bash
 python -m venv venv
-venv\Scripts\activate  
+venv\Scripts\activate
+python -m pip install --upgrade pip
 ```
 3. Установите зависимости и примените миграции:
 ```bash
@@ -36,6 +37,7 @@ cd gallery
 ```bash
 python -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 ```
 3. Установите зависимости и примените миграции:
 ```bash
